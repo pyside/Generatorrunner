@@ -32,6 +32,8 @@
 #include <QDebug>
 #include <typedatabase.h>
 
+typedef QMap<QString, const AbstractMetaType*> AbstractMetaTypeMap;
+
 struct Generator::GeneratorPrivate {
     const ApiExtractor* apiextractor;
     QString outDir;
@@ -40,12 +42,14 @@ struct Generator::GeneratorPrivate {
     QString packageName;
     int numGenerated;
     int numGeneratedWritten;
+    AbstractMetaTypeMap instantiatedContainers;
 };
 
 Generator::Generator() : m_d(new GeneratorPrivate)
 {
     m_d->numGenerated = 0;
     m_d->numGeneratedWritten = 0;
+    m_d->instantiatedContainers = AbstractMetaTypeMap();
 }
 
 Generator::~Generator()
@@ -68,12 +72,63 @@ bool Generator::setup(const ApiExtractor& extractor, const QMap< QString, QStrin
         if (entryFound)
             break;
     }
-
     if (entryFound)
         m_d->packageName = entryFound->name();
     else
         ReportHandler::warning("Couldn't find the package name!!");
+
+    collectInstantiatedContainers();
+
     return doSetup(args);
+}
+
+static QString _getSimplifiedContainerTypeName(const AbstractMetaType* type)
+{
+    if (!type->isContainer())
+        return type->cppSignature();
+    QString typeName = type->cppSignature();
+    if (type->isConstant())
+        typeName.remove(0, sizeof("const ") / sizeof(char) - 1);
+    if (type->isReference())
+        typeName.chop(1);
+    while (typeName.endsWith('*') || typeName.endsWith(' '))
+        typeName.chop(1);
+    return typeName;
+}
+
+void Generator::addInstantiatedContainers(const AbstractMetaType* type)
+{
+    if (!type)
+        return;
+    foreach (const AbstractMetaType* t, type->instantiations())
+        addInstantiatedContainers(t);
+    if (type->typeEntry()->isContainer()) {
+        QString typeName = _getSimplifiedContainerTypeName(type);
+        if (!m_d->instantiatedContainers.contains(typeName))
+            m_d->instantiatedContainers[typeName] = type;
+    }
+}
+
+void Generator::collectInstantiatedContainers(const AbstractMetaFunction* func)
+{
+    addInstantiatedContainers(func->type());
+    foreach (const AbstractMetaArgument* arg, func->arguments())
+        addInstantiatedContainers(arg->type());
+}
+
+void Generator::collectInstantiatedContainers()
+{
+    foreach (const AbstractMetaFunction* func, globalFunctions())
+        collectInstantiatedContainers(func);
+    foreach (const AbstractMetaClass* metaClass, classes()) {
+        foreach (const AbstractMetaFunction* func, metaClass->functions())
+            collectInstantiatedContainers(func);
+    }
+}
+
+QList<const AbstractMetaType*> Generator::instantiatedContainers() const
+{
+    return m_d->instantiatedContainers.values();
 }
 
 QMap< QString, QString > Generator::options() const

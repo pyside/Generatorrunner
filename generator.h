@@ -277,9 +277,14 @@ protected:
     */
     virtual QString subDirectoryForPackage(QString packageName = QString()) const;
 
+    QList<const AbstractMetaType*> instantiatedContainers() const;
+
 private:
     struct GeneratorPrivate;
     GeneratorPrivate* m_d;
+    void addInstantiatedContainers(const AbstractMetaType* type);
+    void collectInstantiatedContainers(const AbstractMetaFunction* func);
+    void collectInstantiatedContainers();
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(Generator::Options)
